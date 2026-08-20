@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LunarLander DQN Deep Flight Control | 루나랜더 AI 관제 센터</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="cyber-scanlines"></div>
+    <div class="space-vignette"></div>
+
+    <div class="app-container">
+        <!-- TOP HEADER HUD -->
+        <header class="top-hud">
+            <div class="hud-brand">
+                <div class="brand-logo">
+                    <span class="logo-icon">🚀</span>
+                    <div class="logo-pulse"></div>
+                </div>
+                <div class="brand-text">
+                    <h1>LUNAR LANDER <span class="accent-cyan">DQN</span> <span class="badge-v3">v3.0</span></h1>
+                    <p class="subtitle">Deep Q-Network Autonomous Landing & Flight Telemetry System</p>
+                </div>
+            </div>
+
+            <!-- MISSION STATS KPI -->
+            <div class="hud-kpi-bar">
+                <div class="kpi-card" id="card-episode">
+                    <span class="kpi-label">EPISODE / 1000</span>
+                    <div class="kpi-value-group">
+                        <span class="kpi-value accent-cyan" id="kpi-ep">0</span>
+                        <span class="kpi-sub">/ 1000</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="ep-progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div class="kpi-card" id="card-epsilon">
+                    <span class="kpi-label">EPSILON (탐험율)</span>
+                    <div class="kpi-value-group">
+                        <span class="kpi-value accent-purple" id="kpi-eps">100.0%</span>
+                        <span class="kpi-sub">→ 5.0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill purple" id="eps-progress-bar" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <div class="kpi-card" id="card-reward">
+                    <span class="kpi-label">LAST / BEST REWARD</span>
+                    <div class="kpi-value-group">
+                        <span class="kpi-value" id="kpi-last-reward">0.0</span>
+                        <span class="kpi-sub" id="kpi-best-reward">Best: 0.0</span>
+                    </div>
+                    <div class="kpi-status-badge" id="landing-status-badge">STANDBY</div>
+                </div>
+
+                <div class="kpi-card" id="card-success">
+                    <span class="kpi-label">착륙 성공률</span>
+                    <div class="kpi-value-group">
+                        <span class="kpi-value accent-green" id="kpi-success-rate">0.0%</span>
+                        <span class="kpi-sub" id="kpi-total-steps">0 Steps</span>
+                    </div>
+                    <div class="status-indicator">
+                        <span class="dot live"></span>
+                        <span id="system-status-text">READY</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN WORKSPACE -->
+        <main class="workspace-grid">
+            <!-- LEFT / CENTER: SIMULATION CANVAS & FLIGHT HUD -->
+            <section class="simulation-section glass-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="pulse-dot"></span>
+                        <h2>FLIGHT SIMULATION VIEWPORT (60 FPS)</h2>
+                    </div>
+                    <div class="viewport-tags">
+                        <span class="tag-mode" id="badge-mode">MODE: IDLE</span>
+                        <span class="tag-speed" id="badge-speed">SPEED: 1x</span>
+                        <button class="btn-icon" id="btn-audio-toggle" title="사운드 온/오프">🔊</button>
+                    </div>
+                </div>
+
+                <div class="canvas-wrapper">
+                    <canvas id="sim-canvas" width="800" height="520"></canvas>
+                    
+                    <!-- HUD FLIGHT GAUGES OVERLAY -->
+                    <div class="flight-hud-overlay">
+                        <!-- ALTITUDE & VERTICAL SPEED -->
+                        <div class="hud-box hud-left">
+                            <div class="hud-item">
+                                <span class="hud-label">ALTITUDE</span>
+                                <span class="hud-val" id="hud-alt">0.0 m</span>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">V-SPEED</span>
+                                <span class="hud-val" id="hud-vy">0.00 m/s</span>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">H-SPEED</span>
+                                <span class="hud-val" id="hud-vx">0.00 m/s</span>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">TILT ANGLE</span>
+                                <span class="hud-val" id="hud-angle">0.0°</span>
+                            </div>
+                        </div>
+
+                        <!-- THRUSTER & LEGS CONTACT -->
+                        <div class="hud-box hud-right">
+                            <div class="hud-item">
+                                <span class="hud-label">MAIN THRUSTER</span>
+                                <span class="hud-val hud-badge" id="hud-thrust-main">OFF</span>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">RCS THRUSTER</span>
+                                <span class="hud-val hud-badge" id="hud-thrust-rcs">OFF</span>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">CONTACT LEGS</span>
+                                <div class="legs-contact-indicator">
+                                    <span class="leg-dot" id="leg-left">L</span>
+                                    <span class="leg-dot" id="leg-right">R</span>
+                                </div>
+                            </div>
+                            <div class="hud-item">
+                                <span class="hud-label">TOUCHDOWN ZONE</span>
+                                <span class="hud-val accent-green" id="hud-zone">ALIGNED</span>
+                            </div>
+                        </div>
+
+                        <!-- CELEBRATION / NOTIFICATION BANNER -->
+                        <div class="hud-banner" id="hud-banner">
+                            <div class="banner-glow"></div>
+                            <h3 id="banner-title">PERFECT TOUCHDOWN!</h3>
+                            <p id="banner-desc">+280 PTS • 간지나는 완벽 착륙</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CANVAS BOTTOM TELEMETRY BAR -->
+                <div class="canvas-footer-bar">
+                    <div class="telemetry-pill">
+                        <span class="pill-label">POSITION:</span>
+                        <span class="pill-val" id="pill-pos">X: 0.00 | Y: 0.00</span>
+                    </div>
+                    <div class="telemetry-pill">
+                        <span class="pill-label">ACTION:</span>
+                        <span class="pill-val accent-cyan" id="pill-action">0: NO-OP</span>
+                    </div>
+                    <div class="telemetry-pill">
+                        <span class="pill-label">STEP REWARD:</span>
+                        <span class="pill-val" id="pill-reward">+0.00</span>
+                    </div>
+                    <div class="telemetry-pill">
+                        <span class="pill-label">TRAINING LOSS:</span>
+                        <span class="pill-val accent-purple" id="pill-loss">0.0000</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT: AI BRAIN & MISSION CONTROL DECK -->
+            <aside class="control-section">
+                <!-- AI BRAIN Q-VALUES VISUALIZER -->
+                <div class="glass-panel q-values-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="brain-icon">🧠</span>
+                            <h3>AI BRAIN DECISION MATRIX</h3>
+                        </div>
+                        <span class="badge-tag">Q-VALUES</span>
+                    </div>
+                    <div class="q-chart-container">
+                        <canvas id="q-values-chart" height="150"></canvas>
+                    </div>
+                    <div class="q-actions-legend">
+                        <div class="legend-item" id="legend-0"><span class="key-badge">0</span> No-op (자유낙하)</div>
+                        <div class="legend-item" id="legend-1"><span class="key-badge">1</span> Left RCS (좌측엔진)</div>
+                        <div class="legend-item" id="legend-2"><span class="key-badge">2</span> Main Fire (메인엔진)</div>
+                        <div class="legend-item" id="legend-3"><span class="key-badge">3</span> Right RCS (우측엔진)</div>
+                    </div>
+                </div>
+
+                <!-- MISSION CONTROL PANEL -->
+                <div class="glass-panel control-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="control-icon">🕹️</span>
+                            <h3>MISSION COMMAND CENTER</h3>
+                        </div>
+                    </div>
+
+                    <!-- PRIMARY ACTION BUTTONS -->
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="btn-start-train">
+                            <span class="btn-icon">⚡</span>
+                            <span>1000 에피소드 학습 시작</span>
+                        </button>
+                        <button class="btn btn-warning" id="btn-pause-train" disabled>
+                            <span class="btn-icon">⏸️</span>
+                            <span>일시정지</span>
+                        </button>
+                        <button class="btn btn-danger" id="btn-stop-train" disabled>
+                            <span class="btn-icon">⏹️</span>
+                            <span>정지</span>
+                        </button>
+                    </div>
+
+                    <!-- SPEED MULTIPLIER CONTROLS -->
+                    <div class="control-group">
+                        <label class="control-label">SIMULATION SPEED (시뮬레이션 배속)</label>
+                        <div class="speed-buttons">
+                            <button class="btn-speed active" data-speed="1x">1x (50FPS)</button>
+                            <button class="btn-speed" data-speed="2x">2x (100FPS)</button>
+                            <button class="btn-speed" data-speed="5x">5x (250FPS)</button>
+                            <button class="btn-speed turbo" data-speed="turbo">🚀 TURBO</button>
+                        </div>
+                    </div>
+
+                    <!-- SPECIAL PILOT MODES -->
+                    <div class="special-modes-group">
+                        <button class="btn btn-special" id="btn-eval-pilot">
+                            <span class="btn-icon">🌟</span>
+                            <div class="btn-text-block">
+                                <span class="btn-main-text">간지나는 상륙 감상 (Test Pilot)</span>
+                                <span class="btn-sub-text">Epsilon=0% 최적 두뇌로 1회 정밀 착륙</span>
+                            </div>
+                        </button>
+
+                        <button class="btn btn-human" id="btn-human-mode">
+                            <span class="btn-icon">🎮</span>
+                            <div class="btn-text-block">
+                                <span class="btn-main-text">내가 직접 착륙하기 (Human Mode)</span>
+                                <span class="btn-sub-text">방향키 ↑ (메인), ← (좌), → (우)로 직접 조종</span>
+                            </div>
+                        </button>
+                    </div>
+
+                    <!-- MODEL SAVE / LOAD -->
+                    <div class="model-mgmt-group">
+                        <button class="btn btn-outline" id="btn-save-model" title="현재 학습 가중치 저장">💾 모델 저장</button>
+                        <button class="btn btn-outline" id="btn-load-model" title="저장된 최고 가중치 로드">📂 모델 불러오기</button>
+                        <button class="btn btn-outline danger" id="btn-reset-model" title="학습 초기화">🔄 초기화</button>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- BOTTOM ANALYTICS CHARTS -->
+        <section class="analytics-section">
+            <div class="analytics-grid">
+                <!-- REWARD & MOVING AVERAGE CHART -->
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="chart-icon">📈</span>
+                            <h3>EPISODE REWARD & 100-EP MOVING AVERAGE (목표: 200+ PTS)</h3>
+                        </div>
+                        <span class="badge-solved">SOLVED: 200+</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="reward-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- EPSILON DECAY & LOSS CONVERGENCE CHART -->
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="chart-icon">📉</span>
+                            <h3>EPSILON DECAY (100% → 5%) & HUBER LOSS</h3>
+                        </div>
+                        <span class="badge-tag">OPTIMIZATION</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="loss-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="cyber-footer">
+            <div class="footer-info">
+                <span>🤖 RL ALGORITHM: <strong>Dueling Deep Q-Network (Double DQN + Huber Loss)</strong></span>
+                <span>🎮 ENVIRONMENT: <strong>Gymnasium LunarLander-v3</strong></span>
+                <span>⚡ BACKEND: <strong>FastAPI & PyTorch</strong></span>
+            </div>
+            <div class="footer-status" id="ws-connection-status">
+                <span class="status-dot"></span> WebSocket Connected
+            </div>
+        </footer>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="/static/js/renderer.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
