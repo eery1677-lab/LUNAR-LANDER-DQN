@@ -91,6 +91,21 @@ async def load_model():
 async def reset_model():
     return engine.reset_model()
 
+class HfUploadRequest(BaseModel):
+    token: str
+    repo_id: str = None
+
+@app.post("/api/model/upload_hf")
+async def upload_hf_endpoint(req: HfUploadRequest):
+    from upload_to_hf import upload_model_to_hf
+    try:
+        res = upload_model_to_hf(repo_id=req.repo_id, token=req.token)
+        if res and isinstance(res, tuple) and res[0]:
+            return {"status": "success", "url": res[1]}
+        return {"status": "error", "message": "Upload failed or was cancelled."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()

@@ -71,7 +71,18 @@ class MissionControlApp {
         this.btnSaveModel = document.getElementById('btn-save-model');
         this.btnLoadModel = document.getElementById('btn-load-model');
         this.btnResetModel = document.getElementById('btn-reset-model');
+        this.btnOpenHf = document.getElementById('btn-open-hf');
         this.btnAudioToggle = document.getElementById('btn-audio-toggle');
+
+        // Hugging Face Modal
+        this.hfModalBackdrop = document.getElementById('hf-modal-backdrop');
+        this.btnCloseHfModal = document.getElementById('btn-close-hf-modal');
+        this.btnCancelHf = document.getElementById('btn-cancel-hf');
+        this.btnSubmitHf = document.getElementById('btn-submit-hf');
+        this.hfTokenInput = document.getElementById('hf-token-input');
+        this.hfRepoInput = document.getElementById('hf-repo-input');
+        this.hfUploadStatus = document.getElementById('hf-upload-status');
+        this.hfStatusMsg = document.getElementById('hf-status-msg');
 
         // Speed buttons
         this.speedButtons = document.querySelectorAll('.btn-speed');
@@ -119,6 +130,12 @@ class MissionControlApp {
         this.btnSaveModel.addEventListener('click', () => this.saveModel());
         this.btnLoadModel.addEventListener('click', () => this.loadModel());
         this.btnResetModel.addEventListener('click', () => this.resetModel());
+        if (this.btnOpenHf) this.btnOpenHf.addEventListener('click', () => this.openHfModal());
+
+        // Hugging Face Modal Events
+        if (this.btnCloseHfModal) this.btnCloseHfModal.addEventListener('click', () => this.closeHfModal());
+        if (this.btnCancelHf) this.btnCancelHf.addEventListener('click', () => this.closeHfModal());
+        if (this.btnSubmitHf) this.btnSubmitHf.addEventListener('click', () => this.submitHfUpload());
 
         // Speed Selection
         this.speedButtons.forEach(btn => {
@@ -487,6 +504,68 @@ class MissionControlApp {
             this.btnPauseTrain.disabled = true;
             this.btnStopTrain.disabled = true;
             this.badgeMode.textContent = 'MODE: IDLE';
+        }
+    }
+
+    // Hugging Face Modal Methods
+    openHfModal() {
+        this.playBeep(900, 0.05);
+        if (this.hfModalBackdrop) {
+            this.hfModalBackdrop.classList.add('active');
+            if (this.hfUploadStatus) {
+                this.hfUploadStatus.className = 'upload-status-box';
+                this.hfUploadStatus.style.display = 'none';
+            }
+        }
+    }
+
+    closeHfModal() {
+        if (this.hfModalBackdrop) {
+            this.hfModalBackdrop.classList.remove('active');
+        }
+    }
+
+    async submitHfUpload() {
+        const token = this.hfTokenInput ? this.hfTokenInput.value.trim() : '';
+        const repo = this.hfRepoInput ? this.hfRepoInput.value.trim() : '';
+
+        if (!token) {
+            alert('⚠️ Hugging Face Write Token을 입력해주세요!');
+            if (this.hfTokenInput) this.hfTokenInput.focus();
+            return;
+        }
+
+        this.playBeep(1000, 0.08);
+        if (this.hfUploadStatus) {
+            this.hfUploadStatus.style.display = 'flex';
+            this.hfUploadStatus.className = 'upload-status-box loading';
+            this.hfStatusMsg.textContent = 'Hugging Face Hub에 모델 및 파일 업로드 중...';
+        }
+        if (this.btnSubmitHf) this.btnSubmitHf.disabled = true;
+
+        try {
+            const res = await fetch('/api/model/upload_hf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: token, repo_id: repo || null })
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                this.hfUploadStatus.className = 'upload-status-box success';
+                this.hfStatusMsg.innerHTML = `🎉 업로드 성공! <a href="${data.url}" target="_blank" style="color: #00ff88; text-decoration: underline; font-weight: bold;">[허깅페이스 저장소 바로가기 ↗]</a>`;
+                this.playFanfare();
+            } else {
+                this.hfUploadStatus.className = 'upload-status-box error';
+                this.hfStatusMsg.textContent = `❌ 업로드 실패: ${data.message || '오류 발생'}`;
+                this.playCrashSound();
+            }
+        } catch (err) {
+            this.hfUploadStatus.className = 'upload-status-box error';
+            this.hfStatusMsg.textContent = `❌ 통신 오류: ${err.message}`;
+            this.playCrashSound();
+        } finally {
+            if (this.btnSubmitHf) this.btnSubmitHf.disabled = false;
         }
     }
 
