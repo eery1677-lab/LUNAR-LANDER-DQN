@@ -14,6 +14,7 @@ class MissionControlApp {
 
         this.humanMode = false;
         this.currentAction = 0;
+        this.maxEpisodes = 1000;
 
         this.initDOMElements();
         this.initEventListeners();
@@ -24,6 +25,7 @@ class MissionControlApp {
     initDOMElements() {
         // KPI elements
         this.kpiEp = document.getElementById('kpi-ep');
+        this.kpiEpMax = document.getElementById('kpi-ep-max');
         this.epProgressBar = document.getElementById('ep-progress-bar');
         this.kpiEps = document.getElementById('kpi-eps');
         this.epsProgressBar = document.getElementById('eps-progress-bar');
@@ -48,6 +50,11 @@ class MissionControlApp {
         this.hudBanner = document.getElementById('hud-banner');
         this.bannerTitle = document.getElementById('banner-title');
         this.bannerDesc = document.getElementById('banner-desc');
+
+        // Custom Episode Input & Preset Pills
+        this.inputMaxEpisodes = document.getElementById('input-max-episodes');
+        this.presetPills = document.querySelectorAll('.btn-pill');
+        this.btnStartLabel = document.getElementById('btn-start-label');
 
         // Bottom Telemetry Pills
         this.pillPos = document.getElementById('pill-pos');
@@ -74,6 +81,31 @@ class MissionControlApp {
     }
 
     initEventListeners() {
+        // Episode Input & Preset Pills
+        if (this.inputMaxEpisodes) {
+            this.inputMaxEpisodes.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val > 0) {
+                    this.maxEpisodes = val;
+                    this.updateMaxEpisodesUI(val);
+                }
+            });
+        }
+
+        this.presetPills.forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                const epVal = parseInt(e.currentTarget.getAttribute('data-ep'), 10);
+                if (!isNaN(epVal)) {
+                    this.maxEpisodes = epVal;
+                    if (this.inputMaxEpisodes) this.inputMaxEpisodes.value = epVal;
+                    this.presetPills.forEach(p => p.classList.remove('active'));
+                    e.currentTarget.classList.add('active');
+                    this.updateMaxEpisodesUI(epVal);
+                    this.playBeep(750, 0.04);
+                }
+            });
+        });
+
         // Training Controls
         this.btnStartTrain.addEventListener('click', () => this.startTraining());
         this.btnPauseTrain.addEventListener('click', () => this.togglePause());
@@ -106,6 +138,11 @@ class MissionControlApp {
         // Keyboard Controls for Human Mode
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
         window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    }
+
+    updateMaxEpisodesUI(epVal) {
+        if (this.kpiEpMax) this.kpiEpMax.textContent = epVal.toLocaleString();
+        if (this.btnStartLabel) this.btnStartLabel.textContent = `${epVal.toLocaleString()} 에피소드 학습 시작`;
     }
 
     initWebSocket() {
@@ -173,8 +210,14 @@ class MissionControlApp {
 
     handleInit(status) {
         if (!status) return;
+        if (status.max_episodes) {
+            this.maxEpisodes = status.max_episodes;
+            this.updateMaxEpisodesUI(status.max_episodes);
+            if (this.inputMaxEpisodes) this.inputMaxEpisodes.value = status.max_episodes;
+        }
+
         this.kpiEp.textContent = status.current_episode;
-        this.epProgressBar.style.width = `${(status.current_episode / status.max_episodes) * 100}%`;
+        this.epProgressBar.style.width = `${(status.current_episode / this.maxEpisodes) * 100}%`;
         this.kpiEps.textContent = `${(status.epsilon * 100).toFixed(1)}%`;
         this.epsProgressBar.style.width = `${status.epsilon * 100}%`;
         this.kpiBestReward.textContent = `Best: ${status.best_reward.toFixed(1)}`;
@@ -190,7 +233,7 @@ class MissionControlApp {
     }
 
     handleTelemetry(data) {
-        // 1. Update Canvas Renderer
+        // 1. Update Canvas Renderer (including procedural dynamic terrain)
         this.renderer.updateState(data);
 
         // 2. Update Flight HUD
@@ -205,7 +248,6 @@ class MissionControlApp {
         this.hudVx.textContent = `${vxM} m/s`;
         this.hudAngle.textContent = `${angleDeg}°`;
 
-        // Safety warning for high descent velocity
         if (st.vy < -0.3) {
             this.hudVy.style.color = '#ff0055';
         } else if (st.vy < -0.15) {
@@ -262,7 +304,7 @@ class MissionControlApp {
         this.pillReward.style.color = data.episode_reward >= 0 ? '#00ff88' : '#ff0055';
         this.pillLoss.textContent = data.loss ? data.loss.toFixed(4) : '0.0000';
 
-        // 3. Update Q-Values Bar Chart & Highlight Action Legend
+        // 3. Update Q-Values Bar Chart
         if (data.q_values) {
             this.charts.updateQValues(data.q_values, data.action);
         }
@@ -280,9 +322,12 @@ class MissionControlApp {
     }
 
     handleEpisodeSummary(summary) {
-        // Update KPI
+        const maxEp = summary.max_episodes || this.maxEpisodes;
+        this.maxEpisodes = maxEp;
+        this.updateMaxEpisodesUI(maxEp);
+
         this.kpiEp.textContent = summary.episode;
-        this.epProgressBar.style.width = `${(summary.episode / 1000) * 100}%`;
+        this.epProgressBar.style.width = `${(summary.episode / maxEp) * 100}%`;
         this.kpiEps.textContent = `${(summary.epsilon * 100).toFixed(1)}%`;
         this.epsProgressBar.style.width = `${summary.epsilon * 100}%`;
         this.kpiLastReward.textContent = `${summary.reward >= 0 ? '+' : ''}${summary.reward.toFixed(1)}`;
@@ -330,7 +375,15 @@ class MissionControlApp {
     // REST API Actions
     async startTraining() {
         this.playBeep(900, 0.08);
-        const res = await fetch('/api/train/start', { method: 'POST' });
+        const epInput = parseInt(this.inputMaxEpisodes ? this.inputMaxEpisodes.value : '1000', 10);
+        const maxEp = (!isNaN(epInput) && epInput > 0) ? epInput : 1000;
+        this.maxEpisodes = maxEp;
+
+        const res = await fetch('/api/train/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_episodes: maxEp })
+        });
         const data = await res.json();
         if (data.status === 'training_started') {
             this.btnStartTrain.disabled = true;
@@ -441,16 +494,16 @@ class MissionControlApp {
     handleKeyDown(e) {
         let action = null;
         if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-            action = 2; // Main Engine
+            action = 2;
             e.preventDefault();
         } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-            action = 1; // Left RCS
+            action = 1;
             e.preventDefault();
         } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-            action = 3; // Right RCS
+            action = 3;
             e.preventDefault();
         } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-            action = 0; // No-op
+            action = 0;
             e.preventDefault();
         }
 

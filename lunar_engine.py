@@ -19,7 +19,7 @@ class LunarEngine:
             batch_size=64,
             eps_start=1.0,
             eps_end=0.05,
-            eps_decay_episodes=800
+            eps_decay_episodes=int(max_episodes * 0.8)
         )
         
         self.env = None
@@ -52,22 +52,53 @@ class LunarEngine:
         self.lock = threading.Lock()
 
     def get_terrain_coords(self, env):
-        """Extract terrain polygon coordinates from Gymnasium LunarLander"""
+        """Extract actual procedural terrain polygon coordinates from Gymnasium LunarLander"""
         try:
             unwrapped = env.unwrapped
-            if hasattr(unwrapped, 'helipad_x1') and hasattr(unwrapped, 'moon'):
-                # Extract ground polygon points if available
-                helipad_x1 = getattr(unwrapped, 'helipad_x1', 0.4)
-                helipad_x2 = getattr(unwrapped, 'helipad_x2', 0.6)
-                helipad_y = getattr(unwrapped, 'helipad_y', 0.2)
+            if hasattr(unwrapped, 'moon') and hasattr(unwrapped.moon, 'fixtures'):
+                helipad_y = float(getattr(unwrapped, 'helipad_y', 3.333))
+                helipad_x1 = float(getattr(unwrapped, 'helipad_x1', 8.0))
+                helipad_x2 = float(getattr(unwrapped, 'helipad_x2', 12.0))
+
+                # Normalize helipad
+                norm_hx1 = (helipad_x1 - 10.0) / 10.0
+                norm_hx2 = (helipad_x2 - 10.0) / 10.0
+
+                points = []
+                fixtures = unwrapped.moon.fixtures
+                # fixtures[0] is usually the bottom boundary [(0,0), (20,0)], skip it
+                terrain_fixtures = fixtures[1:] if len(fixtures) > 1 else fixtures
+
+                for f in terrain_fixtures:
+                    v0, v1 = f.shape.vertices
+                    if not points:
+                        norm_x0 = (v0[0] - 10.0) / 10.0
+                        norm_y0 = (v0[1] - helipad_y) / 6.666
+                        points.append([float(norm_x0), float(norm_y0)])
+                    norm_x1 = (v1[0] - 10.0) / 10.0
+                    norm_y1 = (v1[1] - helipad_y) / 6.666
+                    points.append([float(norm_x1), float(norm_y1)])
+
                 return {
-                    'helipad_x1': float(helipad_x1),
-                    'helipad_x2': float(helipad_x2),
-                    'helipad_y': float(helipad_y)
+                    'points': points,
+                    'helipad_x1': norm_hx1,
+                    'helipad_x2': norm_hx2,
+                    'helipad_y': 0.0
                 }
-        except Exception:
+        except Exception as e:
             pass
-        return {'helipad_x1': 0.4, 'helipad_x2': 0.6, 'helipad_y': 0.2}
+        
+        # Fallback default terrain points
+        return {
+            'points': [
+                [-1.0, 0.05], [-0.8, 0.02], [-0.6, 0.0], [-0.4, 0.08],
+                [-0.2, 0.0], [0.0, 0.0], [0.2, 0.0], [0.4, -0.05],
+                [0.6, 0.02], [0.8, -0.04], [1.0, 0.12]
+            ],
+            'helipad_x1': -0.2,
+            'helipad_x2': 0.2,
+            'helipad_y': 0.0
+        }
 
     def subscribe(self, queue: asyncio.Queue):
         with self.lock:
@@ -86,10 +117,14 @@ class LunarEngine:
                 except Exception:
                     pass
 
-    def start_training(self):
+    def start_training(self, max_episodes: int = None):
         if self.is_running and self.mode == "training":
             return {"status": "already_running"}
         
+        if max_episodes is not None and max_episodes > 0:
+            self.max_episodes = max_episodes
+            self.agent.eps_decay_episodes = int(max_episodes * 0.8)
+
         self.stop_current_worker()
         self.is_running = True
         self.is_paused = False
@@ -99,7 +134,7 @@ class LunarEngine:
 
         self.worker_thread = threading.Thread(target=self._train_loop, daemon=True)
         self.worker_thread.start()
-        return {"status": "training_started"}
+        return {"status": "training_started", "max_episodes": self.max_episodes}
 
     def pause_training(self):
         if self.is_running:
@@ -207,8 +242,6 @@ class LunarEngine:
                 next_state, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
 
-                # Bonus reward shaping for ganji smooth landing:
-                # Extra stability reward if horizontal velocity and angle are near zero near ground
                 shaping_reward = reward
                 loss = self.agent.step(state, action, shaping_reward, next_state, done)
                 if loss is not None:
@@ -272,7 +305,6 @@ class LunarEngine:
 
             if episode_reward > self.best_reward:
                 self.best_reward = episode_reward
-                # Auto-save best model
                 try:
                     self.agent.save("dqn_lunar_lander_best.pt")
                 except Exception:
@@ -284,6 +316,7 @@ class LunarEngine:
             ep_summary = {
                 "type": "episode_summary",
                 "episode": self.current_episode,
+                "max_episodes": self.max_episodes,
                 "reward": float(episode_reward),
                 "moving_avg": avg_100,
                 "epsilon": float(epsilon),
@@ -291,11 +324,11 @@ class LunarEngine:
                 "best_reward": float(self.best_reward),
                 "success_rate": float(self.successful_landings / max(1, self.total_finished_episodes) * 100),
                 "steps": step_count,
-                "status": status
+                "status": status,
+                "terrain": terrain_info
             }
             self.broadcast(ep_summary)
 
-            # Auto-save checkpoint every 50 episodes
             if self.current_episode % 50 == 0:
                 try:
                     self.agent.save("dqn_lunar_lander.pt")
@@ -305,7 +338,7 @@ class LunarEngine:
         env.close()
         self.is_running = False
         self.mode = "idle"
-        self.broadcast({"type": "training_finished", "total_episodes": self.current_episode})
+        self.broadcast({"type": "training_finished", "total_episodes": self.current_episode, "max_episodes": self.max_episodes})
 
     def _eval_loop(self):
         """Evaluate current model with epsilon=0 for 1 smooth episode"""
@@ -318,7 +351,6 @@ class LunarEngine:
 
         while not done and not self.stop_event.is_set():
             step_count += 1
-            # Epsilon = 0: Pure best policy
             action, q_values = self.agent.act(state, evaluate=True)
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -361,12 +393,12 @@ class LunarEngine:
                 "terrain": terrain_info
             }
             self.broadcast(telemetry)
-            time.sleep(0.02) # 50 FPS smooth render
+            time.sleep(0.02)
 
         env.close()
         self.is_running = False
         self.mode = "idle"
-        self.broadcast({"type": "evaluation_finished", "reward": float(episode_reward), "status": status})
+        self.broadcast({"type": "evaluation_finished", "reward": float(episode_reward), "status": status, "terrain": terrain_info})
 
     def _human_loop(self):
         """Allow the human player to control the lunar lander"""
@@ -383,7 +415,6 @@ class LunarEngine:
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-            # Evaluate what AI would have estimated for Q-values
             _, ai_q_values = self.agent.act(state, evaluate=True)
 
             state = next_state
@@ -429,7 +460,7 @@ class LunarEngine:
         env.close()
         self.is_running = False
         self.mode = "idle"
-        self.broadcast({"type": "human_finished", "reward": float(episode_reward), "status": status})
+        self.broadcast({"type": "human_finished", "reward": float(episode_reward), "status": status, "terrain": terrain_info})
 
     def get_status(self):
         return {
@@ -466,7 +497,7 @@ class LunarEngine:
             batch_size=64,
             eps_start=1.0,
             eps_end=0.05,
-            eps_decay_episodes=800
+            eps_decay_episodes=int(self.max_episodes * 0.8)
         )
         self.current_episode = 0
         self.episode_rewards.clear()

@@ -32,10 +32,10 @@
             <!-- MISSION STATS KPI -->
             <div class="hud-kpi-bar">
                 <div class="kpi-card" id="card-episode">
-                    <span class="kpi-label">EPISODE / 1000</span>
+                    <span class="kpi-label">EPISODE / GOAL</span>
                     <div class="kpi-value-group">
                         <span class="kpi-value accent-cyan" id="kpi-ep">0</span>
-                        <span class="kpi-sub">/ 1000</span>
+                        <span class="kpi-sub">/ <span id="kpi-ep-max">1000</span></span>
                     </div>
                     <div class="progress-bar-container">
                         <div class="progress-bar-fill" id="ep-progress-bar" style="width: 0%;"></div>
@@ -86,6 +86,7 @@
                         <h2>FLIGHT SIMULATION VIEWPORT (60 FPS)</h2>
                     </div>
                     <div class="viewport-tags">
+                        <span class="tag-terrain" id="badge-terrain">TERRAIN: DYNAMIC SYNC 🌔</span>
                         <span class="tag-mode" id="badge-mode">MODE: IDLE</span>
                         <span class="tag-speed" id="badge-speed">SPEED: 1x</span>
                         <button class="btn-icon" id="btn-audio-toggle" title="사운드 온/오프">🔊</button>
@@ -182,7 +183,7 @@
                         <span class="badge-tag">Q-VALUES</span>
                     </div>
                     <div class="q-chart-container">
-                        <canvas id="q-values-chart" height="150"></canvas>
+                        <canvas id="q-values-chart" height="135"></canvas>
                     </div>
                     <div class="q-actions-legend">
                         <div class="legend-item" id="legend-0"><span class="key-badge">0</span> No-op (자유낙하)</div>
@@ -201,11 +202,30 @@
                         </div>
                     </div>
 
+                    <!-- CUSTOM EPISODE CONFIGURATION -->
+                    <div class="control-group config-box">
+                        <div class="config-header">
+                            <label class="control-label">🎯 목표 에피소드 수 (직접 입력 / 프리셋)</label>
+                            <span class="config-hint">Epsilon 스케줄 자동 연동</span>
+                        </div>
+                        <div class="episode-input-row">
+                            <input type="number" id="input-max-episodes" class="cyber-input" value="1000" min="10" max="20000" step="50" placeholder="1000">
+                            <span class="input-unit">EPISODES</span>
+                        </div>
+                        <div class="preset-pills">
+                            <button class="btn-pill" data-ep="300">300회</button>
+                            <button class="btn-pill" data-ep="500">500회</button>
+                            <button class="btn-pill active" data-ep="1000">1000회</button>
+                            <button class="btn-pill" data-ep="2000">2000회</button>
+                            <button class="btn-pill" data-ep="5000">5000회</button>
+                        </div>
+                    </div>
+
                     <!-- PRIMARY ACTION BUTTONS -->
                     <div class="button-group">
                         <button class="btn btn-primary" id="btn-start-train">
                             <span class="btn-icon">⚡</span>
-                            <span>1000 에피소드 학습 시작</span>
+                            <span id="btn-start-label">1000 에피소드 학습 시작</span>
                         </button>
                         <button class="btn btn-warning" id="btn-pause-train" disabled>
                             <span class="btn-icon">⏸️</span>
@@ -294,7 +314,7 @@
         <footer class="cyber-footer">
             <div class="footer-info">
                 <span>🤖 RL ALGORITHM: <strong>Dueling Deep Q-Network (Double DQN + Huber Loss)</strong></span>
-                <span>🎮 ENVIRONMENT: <strong>Gymnasium LunarLander-v3</strong></span>
+                <span>🎮 ENVIRONMENT: <strong>Gymnasium LunarLander-v3 (Procedural Dynamic Terrain)</strong></span>
                 <span>⚡ BACKEND: <strong>FastAPI & PyTorch</strong></span>
             </div>
             <div class="footer-status" id="ws-connection-status">

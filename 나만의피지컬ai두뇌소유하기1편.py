@@ -4,7 +4,8 @@ LunarLander-v3 DQN 간지나는 상륙 & 실시간 웹 관제 시스템
 
 - 알고리즘: Dueling Double DQN (Huber Loss, Replay Buffer, Soft Target Update)
 - 입실론(Epsilon): 100% (1.0) -> 5% (0.05) 점진적 감쇠 (Decay)
-- 학습 에피소드: 1,000 에피소드
+- 학습 에피소드: 사용자 맞춤형 설정 가능 (기본: 1,000 에피소드)
+- 지형 시스템: Gymnasium 환경의 절차적 생성 실제 달 표면 지형 실시간 100% 동기화 렌더링
 - 실시간 웹 관제 대시보드 (FastAPI + WebSocket + HTML5 Canvas + Chart.js)
 """
 
@@ -16,10 +17,10 @@ import torch
 from dqn_agent import DQNAgent
 
 def train_standalone(max_episodes=1000, render=False):
-    """독립 실행형 1000 에피소드 DQN 학습 함수"""
+    """독립 실행형 DQN 학습 함수 (에피소드 수 사용자 설정 가능)"""
     print("=" * 65)
     print("🚀 LunarLander-v3 DQN 간지나는 상륙 학습 시작!")
-    print(f"📊 총 에피소드: {max_episodes} | Epsilon: 100% -> 5% 감쇠")
+    print(f"📊 총 에피소드: {max_episodes} | Epsilon: 100% -> 5% 감쇠 ({int(max_episodes*0.8)} 에피소드 동안)")
     print("=" * 65)
 
     env = gym.make("LunarLander-v3", render_mode="human" if render else None)
@@ -33,7 +34,7 @@ def train_standalone(max_episodes=1000, render=False):
         batch_size=64,
         eps_start=1.0,
         eps_end=0.05,
-        eps_decay_episodes=800
+        eps_decay_episodes=int(max_episodes * 0.8)
     )
 
     best_reward = -float("inf")
@@ -67,14 +68,14 @@ def train_standalone(max_episodes=1000, render=False):
 
         if episode % 10 == 0 or total_reward >= 200:
             status_icon = "🌟 [간지나는 착륙 성공!]" if total_reward >= 200 else ("💥 [충돌]" if total_reward < 0 else "✈️ [비행 완료]")
-            print(f"Episode {episode:4d}/1000 | Reward: {total_reward:6.1f} | 100-Avg: {avg_reward:6.1f} | Best: {best_reward:6.1f} | Eps: {epsilon*100:5.1f}% | Steps: {step_count:3d} {status_icon}")
+            print(f"Episode {episode:4d}/{max_episodes} | Reward: {total_reward:6.1f} | 100-Avg: {avg_reward:6.1f} | Best: {best_reward:6.1f} | Eps: {epsilon*100:5.1f}% | Steps: {step_count:3d} {status_icon}")
 
-        if episode % 100 == 0:
-            agent.save(f"dqn_lunar_lander_ep{episode}.pt")
+        if episode % 50 == 0:
+            agent.save(f"dqn_lunar_lander.pt")
 
     env.close()
     print("=" * 65)
-    print("🎉 1000 에피소드 학습 완료! 모델이 저장되었습니다.")
+    print(f"🎉 {max_episodes} 에피소드 학습 완료! 모델이 저장되었습니다.")
     print("=" * 65)
 
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LunarLander DQN Controller")
     parser.add_argument("--mode", type=str, default="web", choices=["web", "train", "test"],
                         help="실행 모드: web (실시간 웹 대시보드), train (콘솔 학습), test (시연)")
-    parser.add_argument("--episodes", type=int, default=1000, help="학습 에피소드 수 (기본: 1000)")
+    parser.add_argument("--episodes", type=int, default=1000, help="학습 에피소드 수 (기본: 1000, 원하는 숫자 입력 가능)")
     args = parser.parse_args()
 
     if args.mode == "web":

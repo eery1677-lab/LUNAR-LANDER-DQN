@@ -1,5 +1,5 @@
 /**
- * LUNAR LANDER 60FPS VECTOR CANVAS RENDERER & PARTICLE ENGINE
+ * LUNAR LANDER 60FPS VECTOR CANVAS RENDERER & DYNAMIC TERRAIN SYNC
  */
 
 class LunarRenderer {
@@ -29,13 +29,22 @@ class LunarRenderer {
         };
         this.action = 0;
         this.status = 'flying';
-        this.terrain = { helipad_x1: 0.4, helipad_x2: 0.6, helipad_y: 0.2 };
+        
+        // Procedural Dynamic Terrain from Gymnasium
+        this.terrain = {
+            points: [
+                [-1.0, 0.05], [-0.8, 0.02], [-0.6, 0.0], [-0.4, 0.08],
+                [-0.2, 0.0], [0.0, 0.0], [0.2, 0.0], [0.4, -0.05],
+                [0.6, 0.02], [0.8, -0.04], [1.0, 0.12]
+            ],
+            helipad_x1: -0.2,
+            helipad_x2: 0.2,
+            helipad_y: 0.0
+        };
 
         // Scale coordinates: LunarLander space x: [-1, 1] -> [0, width], y: [0, 1.4] -> [height, 0]
-        this.scaleX = this.width / 2.0;
-        this.scaleY = this.height / 1.5;
         this.offsetX = this.width / 2.0;
-        this.offsetY = this.height * 0.85; // Ground level
+        this.offsetY = this.height * 0.82; // Ground level
 
         // Animation loop
         this.lastTime = performance.now();
@@ -72,7 +81,7 @@ class LunarRenderer {
             }
             this.status = telemetry.status;
         }
-        if (telemetry.terrain) {
+        if (telemetry.terrain && telemetry.terrain.points) {
             this.terrain = telemetry.terrain;
         }
     }
@@ -90,7 +99,7 @@ class LunarRenderer {
     // World to Screen Coordinates
     worldToScreen(wx, wy) {
         const sx = this.offsetX + wx * (this.width * 0.45);
-        const sy = this.offsetY - wy * (this.height * 0.55);
+        const sy = this.offsetY - wy * (this.height * 0.52);
         return { x: sx, y: sy };
     }
 
@@ -138,7 +147,7 @@ class LunarRenderer {
             }
         }
 
-        // Action 1: Left RCS (pushes lander to the right)
+        // Action 1: Left RCS
         if (this.action === 1) {
             for (let i = 0; i < 2; i++) {
                 this.particles.push({
@@ -155,7 +164,7 @@ class LunarRenderer {
             }
         }
 
-        // Action 3: Right RCS (pushes lander to the left)
+        // Action 3: Right RCS
         if (this.action === 3) {
             for (let i = 0; i < 2; i++) {
                 this.particles.push({
@@ -172,7 +181,7 @@ class LunarRenderer {
             }
         }
 
-        // Update all standard particles
+        // Update standard particles
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
             p.x += p.vx * dt;
@@ -189,7 +198,7 @@ class LunarRenderer {
             const p = this.touchdownParticles[i];
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += 80 * dt; // Gravity
+            p.vy += 80 * dt;
             p.alpha -= p.decay * dt;
             if (p.alpha <= 0) {
                 this.touchdownParticles.splice(i, 1);
@@ -245,10 +254,10 @@ class LunarRenderer {
         // 2. Landing Beacons & Guidance Lasers
         this.renderLandingGuidance(ctx);
 
-        // 3. Moon Terrain & Surface
+        // 3. Dynamic Procedural Moon Terrain
         this.renderMoonTerrain(ctx);
 
-        // 4. Particles (Thrusters, Dust, Explosions)
+        // 4. Particles
         this.renderParticles(ctx);
 
         // 5. Lunar Lander Spacecraft
@@ -259,7 +268,6 @@ class LunarRenderer {
     }
 
     renderSpaceBackground(ctx) {
-        // Nebula Gradient
         const grad = ctx.createRadialGradient(
             this.width * 0.3, this.height * 0.2, 50,
             this.width * 0.5, this.height * 0.4, this.width * 0.7
@@ -270,7 +278,6 @@ class LunarRenderer {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, this.width, this.height);
 
-        // Stars
         for (const star of this.stars) {
             star.alpha += (Math.random() - 0.5) * star.twinkleSpeed;
             star.alpha = Math.max(0.2, Math.min(1.0, star.alpha));
@@ -300,18 +307,18 @@ class LunarRenderer {
     }
 
     renderLandingGuidance(ctx) {
-        const p1 = this.worldToScreen(-0.2, 0.0);
-        const p2 = this.worldToScreen(0.2, 0.0);
+        const p1 = this.worldToScreen(this.terrain.helipad_x1, this.terrain.helipad_y);
+        const p2 = this.worldToScreen(this.terrain.helipad_x2, this.terrain.helipad_y);
 
         ctx.save();
         // Vertical Landing Laser Beacons
-        const laserGrad = ctx.createLinearGradient(0, 0, 0, this.offsetY);
+        const laserGrad = ctx.createLinearGradient(0, 0, 0, p1.y);
         laserGrad.addColorStop(0, 'rgba(0, 255, 136, 0)');
         laserGrad.addColorStop(0.8, 'rgba(0, 255, 136, 0.12)');
         laserGrad.addColorStop(1, 'rgba(0, 255, 136, 0.35)');
 
         ctx.fillStyle = laserGrad;
-        ctx.fillRect(p1.x, 0, p2.x - p1.x, this.offsetY);
+        ctx.fillRect(p1.x, 0, p2.x - p1.x, p1.y);
 
         // Guide Lines
         ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
@@ -319,72 +326,87 @@ class LunarRenderer {
         ctx.setLineDash([6, 6]);
         ctx.beginPath();
         ctx.moveTo(p1.x, 0);
-        ctx.lineTo(p1.x, this.offsetY);
+        ctx.lineTo(p1.x, p1.y);
         ctx.moveTo(p2.x, 0);
-        ctx.lineTo(p2.x, this.offsetY);
+        ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
     }
 
     renderMoonTerrain(ctx) {
-        const groundY = this.offsetY;
-        const p1 = this.worldToScreen(-0.2, 0.0);
-        const p2 = this.worldToScreen(0.2, 0.0);
+        const pts = this.terrain.points;
+        const p1 = this.worldToScreen(this.terrain.helipad_x1, this.terrain.helipad_y);
+        const p2 = this.worldToScreen(this.terrain.helipad_x2, this.terrain.helipad_y);
 
         ctx.save();
 
-        // Terrain Polygon
+        // 1. Draw Exact Dynamic Terrain Polygon from Gymnasium
         ctx.beginPath();
         ctx.moveTo(0, this.height);
-        ctx.lineTo(0, groundY + 25);
-        ctx.lineTo(this.width * 0.15, groundY + 12);
-        ctx.lineTo(this.width * 0.28, groundY + 28);
-        ctx.lineTo(p1.x, groundY); // Landing Pad Left
-        ctx.lineTo(p2.x, groundY); // Landing Pad Right
-        ctx.lineTo(this.width * 0.72, groundY + 20);
-        ctx.lineTo(this.width * 0.88, groundY + 35);
-        ctx.lineTo(this.width, groundY + 18);
+
+        if (pts && pts.length > 0) {
+            const firstScreen = this.worldToScreen(pts[0][0], pts[0][1]);
+            ctx.lineTo(0, firstScreen.y);
+
+            for (let i = 0; i < pts.length; i++) {
+                const s = this.worldToScreen(pts[i][0], pts[i][1]);
+                ctx.lineTo(s.x, s.y);
+            }
+            ctx.lineTo(this.width, this.worldToScreen(pts[pts.length - 1][0], pts[pts.length - 1][1]).y);
+        } else {
+            // Fallback
+            ctx.lineTo(0, this.offsetY + 20);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineTo(this.width, this.offsetY + 20);
+        }
+
         ctx.lineTo(this.width, this.height);
         ctx.closePath();
 
         // Moon Surface Gradient
-        const moonGrad = ctx.createLinearGradient(0, groundY - 20, 0, this.height);
-        moonGrad.addColorStop(0, '#2d3345');
-        moonGrad.addColorStop(0.3, '#1a1e2b');
-        moonGrad.addColorStop(1, '#0c0e17');
+        const moonGrad = ctx.createLinearGradient(0, this.offsetY - 50, 0, this.height);
+        moonGrad.addColorStop(0, '#353c52');
+        moonGrad.addColorStop(0.25, '#222738');
+        moonGrad.addColorStop(0.7, '#131622');
+        moonGrad.addColorStop(1, '#080a12');
         ctx.fillStyle = moonGrad;
         ctx.fill();
 
-        ctx.strokeStyle = 'rgba(160, 180, 220, 0.5)';
+        // Glowing Surface Ridge Outline
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Landing Pad Strip
+        // 2. Landing Pad Flat Strip
+        const padWidth = p2.x - p1.x;
         ctx.fillStyle = 'rgba(0, 255, 136, 0.25)';
-        ctx.fillRect(p1.x, groundY - 2, p2.x - p1.x, 6);
+        ctx.fillRect(p1.x, p1.y - 2, padWidth, 6);
         ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(p1.x, groundY - 2, p2.x - p1.x, 6);
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(p1.x, p1.y - 2, padWidth, 6);
 
-        // Runway Pulsing Beacons
+        // 3. Runway Pulsing Beacons
         const pulse = (Math.sin(performance.now() / 200) + 1) / 2;
         ctx.fillStyle = `rgba(0, 255, 136, ${0.4 + pulse * 0.6})`;
+        ctx.shadowColor = '#00ff88';
+        ctx.shadowBlur = 10;
         ctx.beginPath();
-        ctx.arc(p1.x, groundY, 4, 0, Math.PI * 2);
-        ctx.arc(p2.x, groundY, 4, 0, Math.PI * 2);
+        ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2);
+        ctx.arc(p2.x, p2.y, 4, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
 
-        // Animated Landing Flags
-        this.renderFlag(ctx, p1.x - 8, groundY, '#ff0055');
-        this.renderFlag(ctx, p2.x + 8, groundY, '#00f0ff');
+        // 4. Animated Landing Flags
+        this.renderFlag(ctx, p1.x - 6, p1.y, '#ff0055');
+        this.renderFlag(ctx, p2.x + 6, p2.y, '#00f0ff');
 
         ctx.restore();
     }
 
     renderFlag(ctx, x, y, color) {
         ctx.save();
-        // Flag Pole
         ctx.strokeStyle = '#e0e6ed';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -392,7 +414,6 @@ class LunarRenderer {
         ctx.lineTo(x, y - 24);
         ctx.stroke();
 
-        // Flag Cloth (Waving)
         const wave = Math.sin(this.flagWave) * 3;
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -426,16 +447,16 @@ class LunarRenderer {
 
     renderLander(ctx) {
         const pos = this.worldToScreen(this.state.x, this.state.y);
-        const angle = this.state.angle; // Radians
+        const angle = this.state.angle;
 
         ctx.save();
         ctx.translate(pos.x, pos.y);
-        ctx.rotate(-angle); // Rotate to lander orientation
+        ctx.rotate(-angle);
 
         const landerW = 34;
         const landerH = 26;
 
-        // 1. Landing Legs & Shock Absorbers
+        // Landing Legs
         const legLeftContact = this.state.left_leg === 1;
         const legRightContact = this.state.right_leg === 1;
 
@@ -446,7 +467,6 @@ class LunarRenderer {
         ctx.moveTo(-10, landerH / 2 - 2);
         ctx.lineTo(-22, landerH / 2 + 16);
         ctx.stroke();
-        // Left Footpad
         ctx.fillStyle = legLeftContact ? '#00ff88' : '#ffd700';
         ctx.beginPath();
         ctx.ellipse(-22, landerH / 2 + 16, 6, 2.5, 0, 0, Math.PI * 2);
@@ -459,13 +479,12 @@ class LunarRenderer {
         ctx.moveTo(10, landerH / 2 - 2);
         ctx.lineTo(22, landerH / 2 + 16);
         ctx.stroke();
-        // Right Footpad
         ctx.fillStyle = legRightContact ? '#00ff88' : '#ffd700';
         ctx.beginPath();
         ctx.ellipse(22, landerH / 2 + 16, 6, 2.5, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // 2. Lander Main Engine Bell (Nozzle)
+        // Lander Main Engine Bell
         ctx.fillStyle = '#4a5568';
         ctx.beginPath();
         ctx.moveTo(-7, landerH / 2);
@@ -478,7 +497,7 @@ class LunarRenderer {
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // 3. Lander Octagonal Body (Thermal Gold / Titanium)
+        // Lander Octagonal Body
         const bodyGrad = ctx.createLinearGradient(-landerW / 2, -landerH / 2, landerW / 2, landerH / 2);
         bodyGrad.addColorStop(0, '#ffd700');
         bodyGrad.addColorStop(0.4, '#e6b800');
@@ -502,7 +521,7 @@ class LunarRenderer {
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // 4. Cockpit Glass Visor (Cyan Tint + Reflection)
+        // Cockpit Glass Visor
         const visorGrad = ctx.createLinearGradient(-8, -8, 8, 4);
         visorGrad.addColorStop(0, '#00f0ff');
         visorGrad.addColorStop(0.6, '#0066ff');
@@ -515,7 +534,7 @@ class LunarRenderer {
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // 5. Antenna & Flashing Beacon
+        // Antenna & Flashing Beacon
         ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -523,7 +542,6 @@ class LunarRenderer {
         ctx.lineTo(0, -landerH / 2 - 12);
         ctx.stroke();
 
-        // Blinking Red/Cyan LED Beacon
         const beaconPulse = Math.sin(performance.now() / 150) > 0;
         ctx.fillStyle = beaconPulse ? '#ff0055' : '#00f0ff';
         ctx.beginPath();
@@ -537,7 +555,6 @@ class LunarRenderer {
         const pos = this.worldToScreen(this.state.x, this.state.y);
 
         ctx.save();
-        // Velocity Vector Arrow
         if (Math.abs(this.state.vx) > 0.05 || Math.abs(this.state.vy) > 0.05) {
             ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
             ctx.lineWidth = 1.5;
@@ -548,7 +565,6 @@ class LunarRenderer {
             ctx.lineTo(targetX, targetY);
             ctx.stroke();
 
-            // Arrow Head
             ctx.fillStyle = '#00f0ff';
             ctx.beginPath();
             ctx.arc(targetX, targetY, 3, 0, Math.PI * 2);

@@ -30,15 +30,19 @@ async def get_index():
     index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"message": "LunarLander DQN Mission Control running. Please build static/index.html"}
+    return {"message": "LunarLander DQN Mission Control running."}
 
 @app.get("/api/status")
 async def get_status():
     return engine.get_status()
 
+class TrainStartRequest(BaseModel):
+    max_episodes: int = 1000
+
 @app.post("/api/train/start")
-async def start_training():
-    return engine.start_training()
+async def start_training(req: TrainStartRequest = None):
+    max_ep = req.max_episodes if req and req.max_episodes > 0 else 1000
+    return engine.start_training(max_episodes=max_ep)
 
 @app.post("/api/train/pause")
 async def pause_training():
