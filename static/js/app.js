@@ -476,16 +476,26 @@ class MissionControlApp {
 
     async saveModel() {
         this.playBeep(1000, 0.08);
-        const res = await fetch('/api/model/save', { method: 'POST' });
-        const data = await res.json();
-        alert('✅ 모델 가중치가 dqn_lunar_lander.pt 에 성공적으로 저장되었습니다!');
+        try {
+            const res = await fetch('/api/model/save', { method: 'POST' });
+            const data = await res.json();
+            this.showBanner('MODEL SAVED! 💾', '현재 AI 두뇌 가중치가 dqn_lunar_lander.pt 에 저장되었습니다!', false);
+            this.playFanfare();
+        } catch (e) {
+            this.showBanner('SAVE FAILED ❌', '저장 중 오류가 발생했습니다.', true);
+        }
     }
 
     async loadModel() {
         this.playBeep(1000, 0.08);
-        const res = await fetch('/api/model/load', { method: 'POST' });
-        const data = await res.json();
-        alert('📂 저장된 최고 모델 가중치를 성공적으로 불러왔습니다!');
+        try {
+            const res = await fetch('/api/model/load', { method: 'POST' });
+            const data = await res.json();
+            this.showBanner('MODEL LOADED! 📂', '저장된 최고 AI 두뇌 가중치를 성공적으로 불러왔습니다!', false);
+            this.playFanfare();
+        } catch (e) {
+            this.showBanner('LOAD FAILED ❌', '로드 중 오류가 발생했습니다.', true);
+        }
     }
 
     async resetModel() {
